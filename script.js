@@ -63,3 +63,55 @@
     $$('[data-tilt]').forEach(el => { el.addEventListener('pointermove', e => { const r = el.getBoundingClientRect(), px = (e.clientX - r.left) / r.width - .5, py = (e.clientY - r.top) / r.height - .5; el.style.transform = `perspective(900px) rotateY(${px * 6}deg) rotateX(${-py * 5}deg)`; }); el.addEventListener('pointerleave', () => el.style.transform = ''); });
   }
 })();
+
+/* ===== App screenshot galleries (your real Play Store screenshots only) =====
+   For each app card, looks in assets/apps/<slug>/ for screen-1 … screen-5 (.png, .jpg or .webp),
+   and shows them unmodified in phone frames in a swipeable gallery. No screenshots found: the card keeps
+   its neutral tile. Nothing is ever generated or faked. */
+(() => {
+  'use strict';
+  const MAX = 5, EXT = ['png', 'jpg', 'webp'];
+  const load = src => new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
+  const find = async (base, n) => { for (const e of EXT) { const i = await load(`${base}screen-${n}.${e}`); if (i) return i; } return null; };
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  document.querySelectorAll('.app[data-slug]').forEach(async card => {
+    const base = `assets/apps/${card.dataset.slug}/`, media = card.querySelector('[data-media]'), name = card.querySelector('h3').textContent, shots = [];
+    for (let n = 1; n <= MAX; n++) { const i = await find(base, n); if (!i) break; shots.push(i); }
+    if (!shots.length) return;
+    const track = document.createElement('div'); track.className = 'gal-track'; track.tabIndex = 0; track.setAttribute('role', 'group'); track.setAttribute('aria-label', `${name} screenshots`);
+    shots.forEach((img, i) => { const f = document.createElement('figure'); f.className = 'phone'; img.alt = `${name} — screenshot ${i + 1} of ${shots.length}`; img.loading = 'lazy'; img.decoding = 'async'; f.append(img); track.append(f); });
+    const gal = document.createElement('div'); gal.className = 'gal'; gal.append(track);
+    if (shots.length > 1) {
+      const mk = (cls, label, d) => { const b = document.createElement('button'); b.type = 'button'; b.className = `gal-nav ${cls}`; b.setAttribute('aria-label', `${label} screenshot`); b.textContent = d > 0 ? '›' : '‹'; b.addEventListener('click', () => { const w = track.querySelector('.phone').offsetWidth + 14; track.scrollBy({ left: d * w, behavior: reduce ? 'auto' : 'smooth' }); }); return b; };
+      const dots = document.createElement('div'); dots.className = 'gal-dots'; dots.setAttribute('aria-hidden', 'true');
+      shots.forEach(() => dots.append(document.createElement('i')));
+      gal.append(mk('prev', 'Previous', -1), mk('next', 'Next', 1), dots);
+      const upd = () => { const ph = [...track.children], c = track.scrollLeft + track.clientWidth / 2; let k = 0, best = 1e9; ph.forEach((p, i) => { const d = Math.abs(p.offsetLeft + p.offsetWidth / 2 - c); if (d < best) { best = d; k = i; } }); [...dots.children].forEach((d, i) => d.classList.toggle('on', i === k)); gal.querySelector('.prev').disabled = k === 0; gal.querySelector('.next').disabled = k === ph.length - 1; };
+      track.addEventListener('scroll', () => requestAnimationFrame(upd), { passive: true }); addEventListener('resize', upd); upd();
+    }
+    media.replaceChildren(gal); media.classList.add('has-gal');
+  });
+})();
+
+/* ===== Privacy-friendly analytics (GoatCounter) =====
+   No cookies, no personal data, no visitor identification. Disabled until config.js has a site code,
+   and skipped on localhost / file:// so your own testing never pollutes the numbers. */
+(() => {
+  'use strict';
+  const cfg = window.SITE_CONFIG || {}, code = (cfg.goatcounter || '').trim();
+  if (!/^[a-z0-9-]+$/i.test(code)) return;
+  if (location.protocol === 'file:' || /^(localhost|127\.|\[::1\])/.test(location.hostname)) return;
+  const s = document.createElement('script');
+  s.async = true; s.src = 'https://gc.zgo.at/count.js'; s.dataset.goatcounter = `https://${code}.goatcounter.com/count`;
+  document.head.append(s);
+  const priv = document.getElementById('priv'); if (priv) priv.hidden = false;
+  if (!cfg.showPublicCounter) return;
+  const out = document.getElementById('stats'), fmt = v => String(v == null ? '' : v).trim();
+  fetch(`https://${code}.goatcounter.com/counter/TOTAL.json`).then(r => r.ok ? r.json() : Promise.reject())
+    .then(d => {
+      const views = fmt(d.count), uniq = fmt(d.count_unique);
+      if (!views || !out) return;
+      out.textContent = `Page views ${views}` + (uniq ? ` · Unique visitors ${uniq}` : '');
+      out.hidden = false;
+    }).catch(() => { /* counter not public yet: show nothing rather than a made-up number */ });
+})();
